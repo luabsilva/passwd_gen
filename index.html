@@ -128,7 +128,7 @@
                 <!-- Character Length -->
                 <div class="flex items-center justify-between">
                     <label for="length" class="text-lg font-medium text-white">Comprimento</label>
-                    <input id="length" type="number" value="20" min="8" max="128" class="w-24 p-2 bg-gray-700 text-white text-center rounded-md border border-gray-600 form-input transition-colors">
+                    <input id="length" type="number" value="20" min="4" max="128" class="w-24 p-2 bg-gray-700 text-white text-center rounded-md border border-gray-600 form-input transition-colors">
                 </div>
 
                 <!-- Character Type Options -->
@@ -195,96 +195,82 @@
             messageArea.textContent = '';
             const length = parseInt(lengthInput.value, 10);
 
-            const MIN_LETTERS = 4;
-            const MIN_NUMBERS = 4;
+            let charPool = [];
+            if (uppercaseCheckbox.checked) charPool.push(...charSets.uppercase);
+            if (lowercaseCheckbox.checked) charPool.push(...charSets.lowercase);
+            if (numbersCheckbox.checked) charPool.push(...charSets.numbers);
+            if (symbolsCheckbox.checked) charPool.push(...charSets.symbols);
 
-            if (length < MIN_LETTERS + MIN_NUMBERS) {
-                messageArea.textContent = `O comprimento deve ser no mínimo ${MIN_LETTERS + MIN_NUMBERS} para os requisitos.`;
+            if (charPool.length === 0) {
+                messageArea.textContent = 'Selecione ao menos um tipo de caractere.';
+                passwordOutput.value = '';
                 return;
             }
-            if (!lowercaseCheckbox.checked && !uppercaseCheckbox.checked) {
-                messageArea.textContent = 'Ative as letras para atender aos requisitos.';
-                return;
-            }
-            if (!numbersCheckbox.checked) {
-                messageArea.textContent = 'Ative os números para atender aos requisitos.';
-                return;
-            }
+
+            const typesCount = [uppercaseCheckbox.checked, lowercaseCheckbox.checked, numbersCheckbox.checked, symbolsCheckbox.checked].filter(Boolean).length;
+            const uniqueChars = new Set(charPool.map(c => c.toLowerCase()));
+            
+            const useStrictRules = typesCount > 1;
+            const enforceNoRepeats = length <= uniqueChars.size;
 
             let finalPassword = '';
-            const maxAttempts = 100;
+            const maxAttempts = 50; 
 
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
-                let charPool = [];
-                if (uppercaseCheckbox.checked) charPool.push(...charSets.uppercase);
-                if (lowercaseCheckbox.checked) charPool.push(...charSets.lowercase);
-                if (numbersCheckbox.checked) charPool.push(...charSets.numbers);
-                if (symbolsCheckbox.checked) charPool.push(...charSets.symbols);
-
                 let password = '';
-                let usedChars = new Set(); // Track used characters case-insensitively
-
-                // Generate first character (must be a letter)
-                let firstCharPool = [];
-                if (uppercaseCheckbox.checked) firstCharPool.push(...charSets.uppercase);
-                if (lowercaseCheckbox.checked) firstCharPool.push(...charSets.lowercase);
-                
-                let firstChar = firstCharPool[Math.floor(Math.random() * firstCharPool.length)];
-                password += firstChar;
-                usedChars.add(firstChar.toLowerCase());
-
-                const isUpper = (c) => c >= 'A' && c <= 'Z';
-                const isLower = (c) => c >= 'a' && c <= 'z';
-                const isNumber = (c) => c >= '0' && c <= '9';
+                let usedChars = new Set();
+                let lastChar = '';
 
                 while (password.length < length) {
-                    charPool.sort(() => Math.random() - 0.5); // Shuffle pool
+                    let nextChar = '';
                     let foundChar = false;
-                    for (let i = 0; i < charPool.length; i++) {
-                        const candidateChar = charPool[i];
-                        const lastChar = password[password.length - 1];
+                    const innerMaxAttempts = 100;
 
-                        // Rule 1: No case-insensitive repeats
-                        if (usedChars.has(candidateChar.toLowerCase())) {
-                            continue;
+                    for (let i = 0; i < innerMaxAttempts; i++) {
+                        const candidateChar = charPool[Math.floor(Math.random() * charPool.length)];
+                        let violates = false;
+
+                        // Rule 1: No repeats (if enforced)
+                        if (enforceNoRepeats && usedChars.has(candidateChar.toLowerCase())) {
+                            violates = true;
                         }
 
-                        const isLastUpper = isUpper(lastChar);
-                        const isCandidateUpper = isUpper(candidateChar);
-                        const isLastLower = isLower(lastChar);
-                        const isCandidateLower = isLower(candidateChar);
-                        const isLastNumber = isNumber(lastChar);
-                        const isCandidateNumber = isNumber(candidateChar);
+                        // Rule 2: Strict consecutive/sequential rules (if active)
+                        if (!violates && useStrictRules && password.length > 0) {
+                            const isUpper = (c) => c >= 'A' && c <= 'Z';
+                            const isLower = (c) => c >= 'a' && c <= 'z';
+                            const isNumber = (c) => c >= '0' && c <= '9';
 
-                        // Rule 2: Other consecutive/sequential rules
-                        const violatesRules =
-                            areCharsSequential(lastChar, candidateChar) ||
-                            (isLastUpper && isCandidateUpper) ||
-                            (isLastLower && isCandidateLower) ||
-                            (isLastNumber && isCandidateNumber);
+                            if (areCharsSequential(lastChar, candidateChar) ||
+                                (isUpper(lastChar) && isUpper(candidateChar)) ||
+                                (isLower(lastChar) && isLower(candidateChar)) ||
+                                (isNumber(lastChar) && isNumber(candidateChar))) {
+                                violates = true;
+                            }
+                        }
 
-                        if (!violatesRules) {
-                            password += candidateChar;
-                            usedChars.add(candidateChar.toLowerCase());
+                        if (!violates) {
+                            nextChar = candidateChar;
                             foundChar = true;
                             break;
                         }
                     }
-                    if (!foundChar) {
-                        password = ''; // Invalidate and force new attempt
+
+                    if (foundChar) {
+                        password += nextChar;
+                        lastChar = nextChar;
+                        if (enforceNoRepeats) {
+                            usedChars.add(nextChar.toLowerCase());
+                        }
+                    } else {
+                        password = ''; // Invalidate and retry the whole password
                         break;
                     }
                 }
 
-                if (password.length < length) continue;
-
-                // Validate final password against min requirements
-                const letterCount = (password.match(/[a-zA-Z]/g) || []).length;
-                const numberCount = (password.match(/[0-9]/g) || []).length;
-
-                if (letterCount >= MIN_LETTERS && numberCount >= MIN_NUMBERS) {
+                if (password.length === length) {
                     finalPassword = password;
-                    break; // Success
+                    break;
                 }
             }
 
@@ -292,7 +278,7 @@
                 passwordOutput.value = finalPassword;
             } else {
                 passwordOutput.value = '';
-                messageArea.textContent = 'Não foi possível gerar com os critérios. Tente um comprimento maior.';
+                messageArea.textContent = 'Não foi possível gerar com os critérios. Tente novamente.';
             }
         }
 
